@@ -76,6 +76,14 @@ Both were analyzed, stripped of harness-specific infrastructure (Claude Code plu
 
 ---
 
+## Philosophy
+
+This repo exists because open source compounds. If you build something useful, fix a bug in a dependency, or discover a reusable pattern — **publish it**. Push interesting things to your personal GitHub. Don't let good work stay trapped in private repos.
+
+> *"Build in public. Contribute back. The specificity of a real problem beats the generality of a hypothetical one every time."*
+
+---
+
 ## License
 
 MIT (same as gstack and ECC)
