@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# kimi-timeline-log — append a timeline event to the project timeline
+# Adapted from gstack-timeline-log, rewritten for Python 3
+# Usage: kimi-timeline-log '{"skill":"review","event":"started","branch":"main"}'
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+eval "$("$SCRIPT_DIR/kimi-slug" 2>/dev/null)"
+KIMI_HOME="${KIMI_STATE_HOME:-$HOME/.kimi-state}"
+mkdir -p "$KIMI_HOME/projects/$SLUG"
+
+INPUT="$1"
+
+# Validate JSON with required fields via Python 3
+if ! python3 -c "
+import sys, json
+try:
+    j = json.loads(sys.stdin.read())
+    if not j.get('skill') or not j.get('event'):
+        sys.exit(1)
+except Exception:
+    sys.exit(1)
+" <<< "$INPUT" 2>/dev/null; then
+  exit 0  # skip silently, non-blocking
+fi
+
+# Inject timestamp if not present
+if ! python3 -c "
+import sys, json
+try:
+    j = json.loads(sys.stdin.read())
+    if 'ts' not in j:
+        sys.exit(1)
+except Exception:
+    sys.exit(1)
+" <<< "$INPUT" 2>/dev/null; then
+  INPUT=$(python3 -c "
+import sys, json, datetime
+j = json.loads(sys.stdin.read())
+j['ts'] = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
+print(json.dumps(j, separators=(',', ':')))
+" <<< "$INPUT" 2>/dev/null) || true
+fi
+
+echo "$INPUT" >> "$KIMI_HOME/projects/$SLUG/timeline.jsonl"

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# kimi-learnings-log — append a learning to the project learnings file
+# Adapted from gstack-learnings-log, rewritten for Python 3
+# Usage: kimi-learnings-log '{"skill":"ship","type":"pitfall","key":"act-cache","insight":"...","confidence":8}'
+# Valid types: pattern, pitfall, preference, architecture, tool, operational, investigation
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+eval "$("$SCRIPT_DIR/kimi-slug" 2>/dev/null)"
+KIMI_HOME="${KIMI_STATE_HOME:-$HOME/.kimi-state}"
+mkdir -p "$KIMI_HOME/projects/$SLUG"
+
+INPUT="$1"
+
+# Validate and sanitize via Python 3
+VALIDATED=$(python3 -c "
+import sys, json, re, datetime
+raw = sys.stdin.read()
+try:
+    j = json.loads(raw)
+except Exception:
+    sys.stderr.write('kimi-learnings-log: invalid JSON, skipping\n')
+    sys.exit(1)
+
+ALLOWED_TYPES = ['pattern', 'pitfall', 'preference', 'architecture', 'tool', 'operational', 'investigation']
+if not j.get('type') or j['type'] not in ALLOWED_TYPES:
+    sys.stderr.write(f'kimi-learnings-log: invalid type \"{j.get(\"type\", \"\")}\", must be one of: {\", \".join(ALLOWED_TYPES)}\n')
+    sys.exit(1)
+
+if not j.get('key') or not re.match(r'^[a-zA-Z0-9_-]+$', j['key']):
+    sys.stderr.write('kimi-learnings-log: invalid key, must be alphanumeric with hyphens/underscores only\n')
+    sys.exit(1)
+
+conf = j.get('confidence')
+if not isinstance(conf, int) or conf < 1 or conf > 10:
+    sys.stderr.write('kimi-learnings-log: confidence must be integer 1-10\n')
+    sys.exit(1)
+
+j['_logged_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
+print(json.dumps(j, separators=(',', ':')))
+" <<< "$INPUT" 2>/dev/null) || { exit 1; }
+
+echo "$VALIDATED" >> "$KIMI_HOME/projects/$SLUG/learnings.jsonl"

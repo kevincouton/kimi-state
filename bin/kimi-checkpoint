@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# kimi-checkpoint — save or restore working context
+# Usage:
+#   kimi-checkpoint save "description of current state"
+#   kimi-checkpoint list
+#   kimi-checkpoint restore <checkpoint-file>
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+eval "$("$SCRIPT_DIR/kimi-slug" 2>/dev/null)"
+KIMI_HOME="${KIMI_STATE_HOME:-$HOME/.kimi-state}"
+CHECKPOINT_DIR="$KIMI_HOME/projects/$SLUG/checkpoints"
+mkdir -p "$CHECKPOINT_DIR"
+
+CMD="${1:-}"
+
+save_checkpoint() {
+  local desc="$1"
+  local ts=$(date +%Y%m%d_%H%M%S)
+  local file="$CHECKPOINT_DIR/${BRANCH}_${ts}.md"
+  local git_status=$(git status --short 2>/dev/null || echo "(not a git repo)")
+  local git_log=$(git log --oneline -5 2>/dev/null || echo "(no git history)")
+
+  cat > "$file" <<EOF
+# Checkpoint: $desc
+**Branch:** $BRANCH  
+**Timestamp:** $(date -u +%Y-%m-%dT%H:%M:%SZ)  
+**Directory:** $(pwd)
+
+## Git Status
+\`\`\`
+$git_status
+\`\`\`
+
+## Recent Commits
+\`\`\`
+$git_log
+\`\`\`
+
+## Decisions
+<!-- Fill in key decisions made up to this point -->
+
+## Remaining Work
+<!-- Fill in what is left to do -->
+
+## Failed Approaches
+<!-- Fill in approaches that didn't work -->
+EOF
+  echo "Checkpoint saved: $file"
+}
+
+list_checkpoints() {
+  if [ ! -d "$CHECKPOINT_DIR" ] || [ -z "$(ls -A "$CHECKPOINT_DIR" 2>/dev/null)" ]; then
+    echo "No checkpoints found."
+    return
+  fi
+  ls -lt "$CHECKPOINT_DIR" | awk '{print $6, $7, $8, $9}' | head -20
+}
+
+restore_checkpoint() {
+  local file="$1"
+  if [ ! -f "$file" ]; then
+    # Try relative to checkpoint dir
+    file="$CHECKPOINT_DIR/$file"
+  fi
+  if [ ! -f "$file" ]; then
+    echo "Checkpoint not found: $1" >&2
+    exit 1
+  fi
+  cat "$file"
+}
+
+case "$CMD" in
+  save)
+    DESC="${2:-checkpoint}"
+    save_checkpoint "$DESC"
+    ;;
+  list)
+    list_checkpoints
+    ;;
+  restore)
+    FILE="${2:-}"
+    if [ -z "$FILE" ]; then echo "Usage: kimi-checkpoint restore <file>" >&2; exit 1; fi
+    restore_checkpoint "$FILE"
+    ;;
+  *)
+    echo "Usage: kimi-checkpoint {save <desc>|list|restore <file>}" >&2
+    exit 1
+    ;;
+esac

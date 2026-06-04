@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# kimi-config — read/write ~/.kimi-state/config.yaml
+# Adapted from gstack-config, rewritten for Kimi Code CLI (Python 3 instead of Bun)
+set -euo pipefail
+
+STATE_DIR="${KIMI_STATE_ROOT:-${KIMI_STATE_HOME:-$HOME/.kimi-state}}"
+CONFIG_FILE="$STATE_DIR/config.yaml"
+
+# Ensure config file exists
+if [ ! -f "$CONFIG_FILE" ]; then
+  mkdir -p "$STATE_DIR"
+  cat > "$CONFIG_FILE" <<'EOF'
+# kimi configuration — edit freely, changes take effect on next session.
+#
+# ─── Behavior ────────────────────────────────────────────────────────
+# proactive: true           # Auto-suggest workflow stages when appropriate
+# voice: default            # default | terse
+# boil_lake: true           # Prefer completeness over shortcuts
+# checkpoint_mode: explicit # explicit | continuous (WIP commits)
+# cross_project_learnings: true  # Search other projects for applicable patterns
+#
+# ─── Paths ───────────────────────────────────────────────────────────
+# state_dir: ~/.kimi-state
+EOF
+fi
+
+CMD="${1:-}"
+KEY="${2:-}"
+VAL="${3:-}"
+
+_py() {
+  python3 "$@"
+}
+
+case "$CMD" in
+  get)
+    if [ -z "$KEY" ]; then echo "Usage: kimi-config get <key>" >&2; exit 1; fi
+    _py -c "
+import yaml, sys
+try:
+    with open('$CONFIG_FILE') as f: data = yaml.safe_load(f) or {}
+except Exception:
+    data = {}
+val = data.get('$KEY')
+defaults = {'proactive': 'true', 'voice': 'default', 'boil_lake': 'true', 'checkpoint_mode': 'explicit', 'cross_project_learnings': 'true'}
+if val is None:
+    val = defaults.get('$KEY', '')
+print(val if val is not None else '')
+"
+    ;;
+  set)
+    if [ -z "$KEY" ] || [ -z "$VAL" ]; then echo "Usage: kimi-config set <key> <value>" >&2; exit 1; fi
+    _py -c "
+import yaml, os
+path = '$CONFIG_FILE'
+try:
+    with open(path) as f: data = yaml.safe_load(f) or {}
+except Exception:
+    data = {}
+if '$VAL' == 'true':
+    data['$KEY'] = True
+elif '$VAL' == 'false':
+    data['$KEY'] = False
+else:
+    data['$KEY'] = '$VAL'
+with open(path, 'w') as f:
+    yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+"
+    ;;
+  list)
+    cat "$CONFIG_FILE" 2>/dev/null || true
+    echo ""
+    echo "# Defaults"
+    echo "proactive: true"
+    echo "voice: default"
+    echo "boil_lake: true"
+    echo "checkpoint_mode: explicit"
+    echo "cross_project_learnings: true"
+    ;;
+  defaults)
+    echo "proactive=true"
+    echo "voice=default"
+    echo "boil_lake=true"
+    echo "checkpoint_mode=explicit"
+    echo "cross_project_learnings=true"
+    ;;
+  *)
+    echo "Usage: kimi-config {get|set|list|defaults}" >&2
+    exit 1
+    ;;
+esac

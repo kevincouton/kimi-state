@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# kimi-learnings-search — query project learnings
+# Adapted from gstack-learnings-search, rewritten for Python 3
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+eval "$("$SCRIPT_DIR/kimi-slug" 2>/dev/null)"
+KIMI_HOME="${KIMI_STATE_HOME:-$HOME/.kimi-state}"
+
+LIMIT=10
+CROSS_PROJECT=0
+QUERY=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --limit) LIMIT="$2"; shift 2 ;;
+    --cross-project) CROSS_PROJECT=1; shift ;;
+    *) QUERY="$1"; shift ;;
+  esac
+done
+
+# Build directory list as newline-separated string for Python
+SEARCH_DIRS_STR="$KIMI_HOME/projects/$SLUG"
+
+if [ "$CROSS_PROJECT" -eq 1 ]; then
+  for dir in "$KIMI_HOME/projects"/*; do
+    [ -d "$dir" ] || continue
+    proj=$(basename "$dir")
+    [ "$proj" = "$SLUG" ] && continue
+    SEARCH_DIRS_STR="$SEARCH_DIRS_STR\n$dir"
+  done
+fi
+
+python3 -c "
+import sys, json, os
+
+limit = int('$LIMIT')
+query = '$QUERY'.lower()
+results = []
+
+dirs = '$SEARCH_DIRS_STR'.split('\\n')
+for d in dirs:
+    lf = os.path.join(d, 'learnings.jsonl')
+    if not os.path.exists(lf):
+        continue
+    proj = os.path.basename(d)
+    with open(lf) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                j = json.loads(line)
+            except Exception:
+                continue
+            if query:
+                text = f\"{j.get('key','')} {j.get('insight','')} {j.get('skill','')} {j.get('type','')}\".lower()
+                if query not in text:
+                    continue
+            j['_project'] = proj
+            # Deduplicate by key+type: keep latest
+            found = False
+            for i, r in enumerate(results):
+                if r.get('key') == j.get('key') and r.get('type') == j.get('type') and r.get('_project') == proj:
+                    results[i] = j
+                    found = True
+                    break
+            if not found:
+                results.append(j)
+
+# Sort by confidence desc, then recency
+results.sort(key=lambda x: (x.get('confidence',0), x.get('_logged_at','')), reverse=True)
+
+for r in results[:limit]:
+    proj_tag = f\"[{r['_project']}] \" if r['_project'] != '$SLUG' else ''
+    print(f\"{proj_tag}{r.get('type','').upper()}: {r.get('key','')} (confidence {r.get('confidence',0)}/10)\")
+    print(f\"  {r.get('insight','')}\")
+    print(f\"  skill={r.get('skill','')} source={r.get('source','')}\")
+    print()
+
+if not results:
+    print('No learnings found.')
+" 2>/dev/null

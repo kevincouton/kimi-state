@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# kimi-slug — output project slug and sanitized branch name
+# Adapted from gstack-slug, rewritten for Kimi Code CLI (no Bun dependency)
+# Usage: eval "$(kimi-slug)"  → sets SLUG and BRANCH variables
+set -euo pipefail
+
+CACHE_DIR="$HOME/.kimi-state/slug-cache"
+PROJECT_DIR="$(pwd)"
+CACHE_KEY=$(printf '%s' "$PROJECT_DIR" | tr '/' '_')
+CACHE_FILE="${CACHE_DIR}/${CACHE_KEY}"
+
+# 1. Try cached slug first
+if [[ -f "$CACHE_FILE" ]]; then
+  SLUG=$(cat "$CACHE_FILE")
+fi
+
+# 2. If no cache, compute from git remote
+if [[ -z "${SLUG:-}" ]]; then
+  REMOTE_URL=$(git remote get-url origin 2>/dev/null) || REMOTE_URL=""
+  if [[ -n "$REMOTE_URL" ]]; then
+    RAW_SLUG=$(printf '%s' "$REMOTE_URL" | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-')
+    SLUG=$(printf '%s' "$RAW_SLUG" | tr -cd 'a-zA-Z0-9._-')
+  fi
+fi
+
+# 3. Fallback to basename
+SLUG="${SLUG:-$(basename "$PWD" | tr -cd 'a-zA-Z0-9._-')}"
+
+# Re-sanitize unconditionally before echo
+SLUG=$(printf '%s' "$SLUG" | tr -cd 'a-zA-Z0-9._-')
+
+# 4. Branch name
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr -cd 'a-zA-Z0-9._-') || BRANCH="no-branch"
+BRANCH="${BRANCH:-no-branch}"
+
+# 5. Write cache
+mkdir -p "$CACHE_DIR"
+printf '%s' "$SLUG" > "$CACHE_FILE"
+
+echo "SLUG=$SLUG"
+echo "BRANCH=$BRANCH"

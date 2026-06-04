@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# kimi-review-log — append a review record to the branch reviews file
+# Adapted from gstack-review-log, rewritten for Python 3
+# Usage: kimi-review-log '{"branch":"feature-x","skill":"review","issues":3,"critical":1}'
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+eval "$("$SCRIPT_DIR/kimi-slug" 2>/dev/null)"
+KIMI_HOME="${KIMI_STATE_HOME:-$HOME/.kimi-state}"
+mkdir -p "$KIMI_HOME/projects/$SLUG"
+
+INPUT="$1"
+
+# Validate and inject timestamp
+VALIDATED=$(python3 -c "
+import sys, json, datetime
+try:
+    j = json.loads(sys.stdin.read())
+except Exception:
+    sys.exit(1)
+j['_logged_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
+print(json.dumps(j, separators=(',', ':')))
+" <<< "$INPUT" 2>/dev/null) || { exit 1; }
+
+echo "$VALIDATED" >> "$KIMI_HOME/projects/$SLUG/${BRANCH}-reviews.jsonl"
